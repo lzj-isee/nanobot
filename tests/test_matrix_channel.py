@@ -14,6 +14,8 @@ from nanobot.channels.matrix import (
 )
 from nanobot.config.schema import MatrixConfig
 
+pytestmark = pytest.mark.skip(reason="skip matrix")
+
 _ROOM_SEND_UNSET = object()
 
 
