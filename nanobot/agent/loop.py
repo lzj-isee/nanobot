@@ -191,6 +191,9 @@ class AgentLoop:
                 max_tokens=self.max_tokens,
             )
 
+            if response.reasoning_content:
+                logger.info("Thinking: {}", response.reasoning_content)
+
             if response.has_tool_calls:
                 if on_progress:
                     clean = self._strip_think(response.content)
