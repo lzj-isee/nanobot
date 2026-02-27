@@ -964,7 +964,7 @@ docker run -v ~/.nanobot:/root/.nanobot --rm nanobot onboard
 vim ~/.nanobot/config.json
 
 # Run gateway (connects to enabled channels, e.g. Telegram/Discord/Mochat)
-docker run -v ~/.nanobot:/root/.nanobot -p 18790:18790 nanobot gateway
+docker run -v ~/.nanobot:/root/.nanobot -p 35768:35768 nanobot gateway
 
 # Or run a single command
 docker run -v ~/.nanobot:/root/.nanobot --rm nanobot agent -m "Hello!"

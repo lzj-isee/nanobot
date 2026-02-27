@@ -260,7 +260,7 @@ class GatewayConfig(Base):
     """Gateway/server configuration."""
 
     host: str = "0.0.0.0"
-    port: int = 18790
+    port: int = 35768
     heartbeat: HeartbeatConfig = Field(default_factory=HeartbeatConfig)
 
 

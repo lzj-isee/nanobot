@@ -34,7 +34,7 @@ WORKDIR /app
 RUN mkdir -p /root/.nanobot
 
 # Gateway default port
-EXPOSE 18790
+EXPOSE 35768
 
 ENTRYPOINT ["nanobot"]
 CMD ["status"]

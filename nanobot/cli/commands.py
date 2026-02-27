@@ -274,7 +274,7 @@ def _make_provider(config: Config):
 
 @app.command()
 def gateway(
-    port: int = typer.Option(18790, "--port", "-p", help="Gateway port"),
+    port: int = typer.Option(35768, "--port", "-p", help="Gateway port"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
     """Start the nanobot gateway."""
