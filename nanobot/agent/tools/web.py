@@ -11,6 +11,14 @@ import httpx
 
 from nanobot.agent.tools.base import Tool
 
+# Load environment variables from .env file if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv is optional, so we don't require it
+    pass
+
 # Shared constants
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36"
 MAX_REDIRECTS = 5  # Limit redirects to prevent DoS attacks
@@ -44,8 +52,8 @@ def _validate_url(url: str) -> tuple[bool, str]:
 
 
 class WebSearchTool(Tool):
-    """Search the web using Brave Search API."""
-    
+    """Search the web using DashScope WebSearch API via MCP protocol."""
+
     name = "web_search"
     description = "Search the web. Returns titles, URLs, and snippets."
     parameters = {
@@ -56,47 +64,241 @@ class WebSearchTool(Tool):
         },
         "required": ["query"]
     }
-    
-    def __init__(self, api_key: str | None = None, max_results: int = 5):
+
+    def __init__(self, api_key: str | None = None, max_results: int = 10):
         self._init_api_key = api_key
         self.max_results = max_results
+        self.base_url = "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/mcp"
+        
+        # Initialize the MCP connection and discover available tools
+        self._session_initialized = False
+        self._available_tools = {}
+        self._search_tool_name = None
+        self._input_schema = {}
 
     @property
     def api_key(self) -> str:
         """Resolve API key at call time so env/config changes are picked up."""
-        return self._init_api_key or os.environ.get("BRAVE_API_KEY", "")
+        return self._init_api_key or os.environ.get("DASHSCOPE_API_KEY", "")
+
+    async def _ensure_session_initialized(self):
+        """Initialize the MCP session and discover available tools if not already done."""
+        if self._session_initialized:
+            return
+
+        if not self.api_key:
+            raise ValueError("DashScope API key not configured. Set DASHSCOPE_API_KEY in your environment variables.")
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            # Initialize MCP session
+            init_payload = {
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {
+                        "name": "nanobot-web-search",
+                        "version": "1.0.0"
+                    }
+                },
+                "id": 1
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Send initialization
+                init_response = await client.post(self.base_url, json=init_payload, headers=headers)
+                init_response.raise_for_status()
+                
+                # Send initialized notification
+                notify_payload = {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                    "params": {}
+                }
+                await client.post(self.base_url, json=notify_payload, headers=headers)
+
+                # Get list of available tools
+                tools_payload = {
+                    "jsonrpc": "2.0",
+                    "method": "tools/list",
+                    "id": 2
+                }
+                
+                tools_response = await client.post(self.base_url, json=tools_payload, headers=headers)
+                tools_response.raise_for_status()
+                
+                # Parse the tools
+                tools_data = tools_response.json()
+                tools_list = tools_data.get("result", {}).get("tools", [])
+                
+                # Store the tools for later use
+                for tool in tools_list:
+                    name = tool.get("name")
+                    self._available_tools[name] = tool
+                    
+                    # Look for a web search tool
+                    if "search" in name.lower() or "web" in name.lower():
+                        self._search_tool_name = name
+                
+                # If we didn't find a search tool by keyword, use the first one
+                if not self._search_tool_name and self._available_tools:
+                    self._search_tool_name = next(iter(self._available_tools.keys()))
+                
+                if not self._search_tool_name:
+                    raise ValueError("No web search tool found in the available tools")
+                
+                # Store the input schema for the selected tool
+                selected_tool = self._available_tools[self._search_tool_name]
+                self._input_schema = selected_tool.get("inputSchema", {})
+                
+                self._session_initialized = True
+
+        except httpx.HTTPStatusError as e:
+            raise RuntimeError(f"HTTP error {e.response.status_code}: Failed to initialize MCP session")
+        except httpx.RequestError as e:
+            raise RuntimeError(f"Request error during initialization: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Error initializing MCP session: {str(e)}")
+
+    def _build_arguments(self, query: str, count: int | None = None) -> dict:
+        """Dynamically build arguments based on the tool's input schema."""
+        # Get the input schema properties
+        schema_props = self._input_schema.get("properties", {})
+        
+        arguments = {}
+        
+        # Map the query parameter - find the actual parameter name for query (might be different)
+        query_param_found = False
+        for param_name in schema_props.keys():
+            if param_name.lower() == "query" or "query" in param_name.lower():
+                arguments[param_name] = query
+                query_param_found = True
+                break
+        
+        # If no query-like parameter found in properties, try required fields
+        if not query_param_found:
+            required_fields = self._input_schema.get("required", [])
+            for field in required_fields:
+                if field.lower() == "query" or "query" in field.lower():
+                    arguments[field] = query
+                    query_param_found = True
+                    break
+        
+        # If still no query parameter found, add it with default name
+        if not query_param_found:
+            arguments["query"] = query
+        
+        # Map the count parameter - find the actual parameter name for count (might be different)
+        count_param_found = False
+        for param_name in schema_props.keys():
+            param_lower = param_name.lower()
+            # Check if the parameter name contains any of the keywords we're looking for
+            if any(keyword in param_lower for keyword in ["count", "num", "limit", "size"]):
+                count_arg_value = min(max(count or self.max_results, 1), 10)
+                arguments[param_name] = count_arg_value
+                count_param_found = True
+                break
+        
+        # If no count-like parameter found in properties, try required fields
+        if not count_param_found:
+            required_fields = self._input_schema.get("required", [])
+            for field in required_fields:
+                field_lower = field.lower()
+                # Check if the required field contains any of the keywords we're looking for
+                if any(keyword in field_lower for keyword in ["count", "num", "limit", "size"]):
+                    count_arg_value = min(max(count or self.max_results, 1), 10)
+                    arguments[field] = count_arg_value
+                    count_param_found = True
+                    break
+        
+        return arguments
 
     async def execute(self, query: str, count: int | None = None, **kwargs: Any) -> str:
         if not self.api_key:
             return (
-                "Error: Brave Search API key not configured. "
-                "Set it in ~/.nanobot/config.json under tools.web.search.apiKey "
-                "(or export BRAVE_API_KEY), then restart the gateway."
+                "Error: DashScope API key not configured. "
+                "Set DASHSCOPE_API_KEY in your environment variables."
             )
-        
+
         try:
-            n = min(max(count or self.max_results, 1), 10)
-            async with httpx.AsyncClient() as client:
-                r = await client.get(
-                    "https://api.search.brave.com/res/v1/web/search",
-                    params={"q": query, "count": n},
-                    headers={"Accept": "application/json", "X-Subscription-Token": self.api_key},
-                    timeout=10.0
-                )
-                r.raise_for_status()
+            # Ensure session is initialized
+            await self._ensure_session_initialized()
             
-            results = r.json().get("web", {}).get("results", [])
-            if not results:
-                return f"No results for: {query}"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+
+            # Build arguments dynamically based on the tool's schema
+            arguments = self._build_arguments(query, count)
+
+            # Call the discovered web search tool
+            search_payload = {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": self._search_tool_name,  # Dynamically discovered tool name
+                    "arguments": arguments
+                },
+                "id": 3
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                search_response = await client.post(self.base_url, json=search_payload, headers=headers)
+                search_response.raise_for_status()
+
+            # Parse the search results
+            result_data = search_response.json()
             
-            lines = [f"Results for: {query}\n"]
-            for i, item in enumerate(results[:n], 1):
-                lines.append(f"{i}. {item.get('title', '')}\n   {item.get('url', '')}")
-                if desc := item.get("description"):
-                    lines.append(f"   {desc}")
-            return "\n".join(lines)
+            # Extract content from the response
+            content_blocks = result_data.get("result", {}).get("content", [])
+            
+            # Find the text content block
+            text_content = None
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    text_content = block.get("text")
+                    break
+            
+            if not text_content:
+                return f"No search results found for query: {query}"
+            
+            # Parse the text content as JSON (which contains the actual search results)
+            try:
+                search_results = json.loads(text_content)
+                pages = search_results.get("pages", [])
+                
+                if not pages:
+                    return f"No search results found for query: {query}"
+                
+                # Format the results
+                lines = [f"Results for: {query}\n"]
+                for i, item in enumerate(pages, 1):  # Show all results returned, up to what was requested
+                    title = item.get("title", "No Title")
+                    url = item.get("url", "")
+                    snippet = item.get("snippet", "")
+                    
+                    lines.append(f"{i}. {title}")
+                    lines.append(f"   URL: {url}")
+                    lines.append(f"   Snippet: {snippet}")
+                    lines.append("")  # Empty line for readability
+                
+                return "\n".join(lines).strip()
+            except json.JSONDecodeError:
+                return f"Error parsing search results: Could not decode JSON response\nRaw response: {text_content}"
+
+        except httpx.HTTPStatusError as e:
+            return f"HTTP error {e.response.status_code}: Failed to search the web"
+        except httpx.RequestError as e:
+            return f"Request error: {str(e)}"
         except Exception as e:
-            return f"Error: {e}"
+            return f"Error: {str(e)}"
 
 
 class WebFetchTool(Tool):

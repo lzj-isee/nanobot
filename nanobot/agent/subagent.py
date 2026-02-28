@@ -101,7 +101,7 @@ class SubagentManager:
                 restrict_to_workspace=self.restrict_to_workspace,
                 path_append=self.exec_config.path_append,
             ))
-            tools.register(WebSearchTool(api_key=self.brave_api_key))
+            tools.register(WebSearchTool())  # Will use DASHSCOPE_API_KEY from environment
             tools.register(WebFetchTool())
             
             # Build messages with subagent-specific prompt
