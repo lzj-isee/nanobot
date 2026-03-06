@@ -98,6 +98,7 @@ def test_onboard_existing_workspace_safe_create(mock_paths):
 
 def test_config_matches_github_copilot_codex_with_hyphen_prefix():
     config = Config()
+    config.agents.defaults.provider = "auto"
     config.agents.defaults.model = "github-copilot/gpt-5.3-codex"
 
     assert config.get_provider_name() == "github_copilot"
@@ -105,6 +106,7 @@ def test_config_matches_github_copilot_codex_with_hyphen_prefix():
 
 def test_config_matches_openai_codex_with_hyphen_prefix():
     config = Config()
+    config.agents.defaults.provider = "auto"
     config.agents.defaults.model = "openai-codex/gpt-5.1-codex"
 
     assert config.get_provider_name() == "openai_codex"

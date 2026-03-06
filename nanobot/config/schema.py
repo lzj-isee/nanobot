@@ -1,11 +1,16 @@
 """Configuration schema using Pydantic."""
 
+import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from pydantic.alias_generators import to_camel
 from pydantic_settings import BaseSettings
+
+# Load .env file if exists
+from dotenv import load_dotenv
+load_dotenv()
 
 
 class Base(BaseModel):
@@ -205,9 +210,9 @@ class AgentDefaults(Base):
     """Default agent configuration."""
 
     workspace: str = "~/.nanobot/workspace"
-    model: str = "anthropic/claude-opus-4-5"
-    provider: str = "auto"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
-    max_tokens: int = 8192
+    model: str = "moonshot/kimi-k2.5"
+    provider: str = "openai"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
+    max_tokens: int = 32768
     temperature: float = 0.1
     max_tool_iterations: int = 40
     memory_window: int = 100
@@ -220,11 +225,16 @@ class AgentsConfig(Base):
 
 
 class ProviderConfig(Base):
-    """LLM provider configuration."""
-
-    api_key: str = ""
+    api_key: str | None = None
     api_base: str | None = None
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
+
+    def load_from_env(self):
+        """Load API key and base from environment variables."""
+        if self.api_key is None:
+            self.api_key = os.getenv("DASHSCOPE_API_KEY_CODING_PLAN") or None
+        if self.api_base is None:
+            self.api_base = os.getenv("DASHSCOPE_CODING_PLAN_URL") or None
 
 
 class ProvidersConfig(Base):
@@ -247,6 +257,12 @@ class ProvidersConfig(Base):
     volcengine: ProviderConfig = Field(default_factory=ProviderConfig)  # VolcEngine (火山引擎) API gateway
     openai_codex: ProviderConfig = Field(default_factory=ProviderConfig)  # OpenAI Codex (OAuth)
     github_copilot: ProviderConfig = Field(default_factory=ProviderConfig)  # Github Copilot (OAuth)
+
+    def load_env_for_provider(self, provider_name: str):
+        """Load environment variables for a specific provider."""
+        provider = getattr(self, provider_name, None)
+        if provider and not provider.api_key:
+            provider.load_from_env()
 
 
 class HeartbeatConfig(Base):
@@ -392,3 +408,39 @@ class Config(BaseSettings):
         return None
 
     model_config = ConfigDict(env_prefix="NANOBOT_", env_nested_delimiter="__")
+
+    @model_validator(mode="after")
+    def load_env_for_active_provider(self):
+        """Load environment variables only for the active provider."""
+        # Determine which provider should be active
+        forced = self.agents.defaults.provider
+        if forced != "auto":
+            # Use explicitly configured provider
+            self.providers.load_env_for_provider(forced)
+        else:
+            # Auto-detect based on model name
+            model = self.agents.defaults.model
+            model_lower = model.lower()
+            model_normalized = model_lower.replace("-", "_")
+            model_prefix = model_lower.split("/", 1)[0] if "/" in model_lower else ""
+            normalized_prefix = model_prefix.replace("-", "_")
+
+            from nanobot.providers.registry import PROVIDERS
+
+            def _kw_matches(kw: str) -> bool:
+                kw = kw.lower()
+                return kw in model_lower or kw.replace("-", "_") in model_normalized
+
+            # Check explicit prefix match first
+            for spec in PROVIDERS:
+                if model_prefix and normalized_prefix == spec.name:
+                    self.providers.load_env_for_provider(spec.name)
+                    return self
+
+            # Check keyword match
+            for spec in PROVIDERS:
+                if any(_kw_matches(kw) for kw in spec.keywords):
+                    self.providers.load_env_for_provider(spec.name)
+                    return self
+
+        return self

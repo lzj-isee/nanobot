@@ -272,6 +272,25 @@ def _make_provider(config: Config):
 # ============================================================================
 
 
+def _log_config(logger, config: Config):
+    """Log agent defaults and provider configuration."""
+    defaults = config.agents.defaults
+    logger.info("Agent defaults: model={}, temperature={}, max_tokens={}, max_tool_iterations={}, memory_window={}",
+                defaults.model, defaults.temperature, defaults.max_tokens,
+                defaults.max_tool_iterations, defaults.memory_window)
+
+    # Log matched provider info
+    provider_name = config.get_provider_name()
+    provider = config.get_provider()
+    if provider:
+        api_key_display = "set" if provider.api_key else "not set"
+        api_base_display = provider.api_base or config.get_api_base() or "default"
+        logger.info("Provider: name={}, api_key={}, api_base={}",
+                    provider_name, api_key_display, api_base_display)
+    else:
+        logger.info("Provider: name={}, no provider configured", provider_name)
+
+
 @app.command()
 def gateway(
     port: int = typer.Option(35768, "--port", "-p", help="Gateway port"),
@@ -286,14 +305,16 @@ def gateway(
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
-    
+    from loguru import logger
+
     if verbose:
         import logging
         logging.basicConfig(level=logging.DEBUG)
-    
+
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
-    
+
     config = load_config()
+    _log_config(logger, config)
     bus = MessageBus()
     provider = _make_provider(config)
     session_manager = SessionManager(config.workspace_path)
@@ -459,7 +480,8 @@ def agent(
     from loguru import logger
     
     config = load_config()
-    
+    _log_config(logger, config)
+
     bus = MessageBus()
     provider = _make_provider(config)
 
