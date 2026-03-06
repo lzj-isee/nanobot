@@ -200,6 +200,7 @@ class LiteLLMProvider(LLMProvider):
             "messages": self._sanitize_messages(self._sanitize_empty_content(messages)),
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "extra_body": {"enable_thinking": True}
         }
         
         # Apply model-specific overrides (e.g. kimi-k2.5 temperature)
