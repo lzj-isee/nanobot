@@ -57,6 +57,13 @@ class DingTalkConfig(Base):
     client_secret: str = ""  # AppSecret
     allow_from: list[str] = Field(default_factory=list)  # Allowed staff_ids
 
+    def load_from_env(self):
+        """Load DingTalk credentials from environment variables."""
+        if not self.client_id:
+            self.client_id = os.getenv("DINGTALK_CLIENT_ID", "")
+        if not self.client_secret:
+            self.client_secret = os.getenv("DINGTALK_CLIENT_SECRET", "")
+
 
 class DiscordConfig(Base):
     """Discord channel configuration."""
@@ -443,4 +450,11 @@ class Config(BaseSettings):
                     self.providers.load_env_for_provider(spec.name)
                     return self
 
+        return self
+
+    @model_validator(mode="after")
+    def load_channel_env(self):
+        """Load environment variables for channels."""
+        # Load DingTalk credentials from env if not configured
+        self.channels.dingtalk.load_from_env()
         return self
