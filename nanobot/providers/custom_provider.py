@@ -24,6 +24,7 @@ class CustomProvider(LLMProvider):
             "messages": self._sanitize_empty_content(messages),
             "max_tokens": max(1, max_tokens),
             "temperature": temperature,
+            "extra_body": {"enable_thinking": True}
         }
         if tools:
             kwargs.update(tools=tools, tool_choice="auto")

@@ -95,7 +95,7 @@ class CronService:
                             tz=j["schedule"].get("tz"),
                         ),
                         payload=CronPayload(
-                            kind=j["payload"].get("kind", "agent_turn"),
+                            kind=j["payload"].get("kind", "task"),
                             message=j["payload"].get("message", ""),
                             deliver=j["payload"].get("deliver", False),
                             channel=j["payload"].get("channel"),
@@ -286,7 +286,7 @@ class CronService:
         channel: str | None = None,
         to: str | None = None,
         delete_after_run: bool = False,
-        kind: Literal["agent_turn", "system_event"] = "agent_turn",
+        kind: Literal["reminder", "task"] = "task",
     ) -> CronJob:
         """Add a new job."""
         store = self._load_store()

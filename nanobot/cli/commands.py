@@ -324,7 +324,7 @@ def gateway(
     # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
         """Execute a cron job."""
-        if job.payload.kind == "system_event":
+        if job.payload.kind == "reminder":
             # Reminder: send message directly without agent processing
             if job.payload.to:
                 from nanobot.bus.events import OutboundMessage
@@ -899,9 +899,6 @@ def cron_add(
     store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
 
-    # Map CLI kind to internal kind
-    internal_kind = "system_event" if kind == "reminder" else "agent_turn"
-
     # One-time jobs (at) should be deleted after run
     delete_after_run = at is not None
 
@@ -913,7 +910,7 @@ def cron_add(
             deliver=deliver,
             to=to,
             channel=channel,
-            kind=internal_kind,
+            kind=kind,
             delete_after_run=delete_after_run,
         )
     except ValueError as e:

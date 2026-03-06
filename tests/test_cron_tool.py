@@ -35,7 +35,7 @@ async def test_add_reminder_job(cron_tool, cron_service):
     # Verify job was created with correct kind
     jobs = cron_service.list_jobs(include_disabled=True)
     assert len(jobs) == 1
-    assert jobs[0].payload.kind == "system_event"
+    assert jobs[0].payload.kind == "reminder"
     assert jobs[0].payload.message == "Drink water!"
 
 
@@ -52,7 +52,7 @@ async def test_add_task_job(cron_tool, cron_service):
     assert "Created task job" in result
 
     jobs = cron_service.list_jobs(include_disabled=True)
-    assert jobs[0].payload.kind == "agent_turn"
+    assert jobs[0].payload.kind == "task"
 
 
 @pytest.mark.asyncio
@@ -67,7 +67,7 @@ async def test_add_job_default_kind_is_task(cron_tool, cron_service):
     assert "Created task job" in result
 
     jobs = cron_service.list_jobs(include_disabled=True)
-    assert jobs[0].payload.kind == "agent_turn"
+    assert jobs[0].payload.kind == "task"
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,7 @@ async def test_add_one_time_reminder(cron_tool, cron_service):
     assert "Created reminder job" in result
 
     jobs = cron_service.list_jobs(include_disabled=True)
-    assert jobs[0].payload.kind == "system_event"
+    assert jobs[0].payload.kind == "reminder"
     assert jobs[0].schedule.kind == "at"
     assert jobs[0].delete_after_run is True
 
@@ -114,7 +114,7 @@ async def test_add_cron_reminder(cron_tool, cron_service):
     assert "Created reminder job" in result
 
     jobs = cron_service.list_jobs(include_disabled=True)
-    assert jobs[0].payload.kind == "system_event"
+    assert jobs[0].payload.kind == "reminder"
     assert jobs[0].schedule.kind == "cron"
 
 
@@ -132,7 +132,7 @@ async def test_list_jobs(cron_tool):
     result = await cron_tool.execute(action="list")
 
     assert "Test" in result
-    assert "reminder" in result or "system_event" in result
+    assert "reminder" in result
 
 
 @pytest.mark.asyncio

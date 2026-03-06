@@ -117,9 +117,6 @@ class CronTool(Tool):
         if kind not in ("reminder", "task"):
             return "Error: kind must be 'reminder' or 'task'"
 
-        # Map kind to service kind
-        service_kind = "system_event" if kind == "reminder" else "agent_turn"
-
         # Build schedule
         delete_after = False
         if every_seconds:
@@ -143,7 +140,7 @@ class CronTool(Tool):
             channel=self._channel,
             to=self._chat_id,
             delete_after_run=delete_after,
-            kind=service_kind,
+            kind=kind,
         )
         return f"Created {kind} job '{job.name}' (id: {job.id})"
     

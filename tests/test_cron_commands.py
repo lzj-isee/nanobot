@@ -58,7 +58,7 @@ def test_cron_add_with_kind_reminder(monkeypatch, tmp_path) -> None:
     assert jobs_file.exists()
     data = json.loads(jobs_file.read_text())
     assert len(data["jobs"]) == 1
-    assert data["jobs"][0]["payload"]["kind"] == "system_event"
+    assert data["jobs"][0]["payload"]["kind"] == "reminder"
 
 
 def test_cron_add_with_kind_task(monkeypatch, tmp_path) -> None:
@@ -88,7 +88,7 @@ def test_cron_add_with_kind_task(monkeypatch, tmp_path) -> None:
     import json
     jobs_file = tmp_path / "cron" / "jobs.json"
     data = json.loads(jobs_file.read_text())
-    assert data["jobs"][0]["payload"]["kind"] == "agent_turn"
+    assert data["jobs"][0]["payload"]["kind"] == "task"
 
 
 def test_cron_add_default_kind_is_task(monkeypatch, tmp_path) -> None:
@@ -111,11 +111,11 @@ def test_cron_add_default_kind_is_task(monkeypatch, tmp_path) -> None:
 
     assert result.exit_code == 0
 
-    # Verify default kind is agent_turn
+    # Verify default kind is task
     import json
     jobs_file = tmp_path / "cron" / "jobs.json"
     data = json.loads(jobs_file.read_text())
-    assert data["jobs"][0]["payload"]["kind"] == "agent_turn"
+    assert data["jobs"][0]["payload"]["kind"] == "task"
 
 
 def test_cron_add_rejects_invalid_kind(monkeypatch, tmp_path) -> None:
@@ -169,5 +169,5 @@ def test_cron_add_at_with_kind_reminder(monkeypatch, tmp_path) -> None:
     import json
     jobs_file = tmp_path / "cron" / "jobs.json"
     data = json.loads(jobs_file.read_text())
-    assert data["jobs"][0]["payload"]["kind"] == "system_event"
+    assert data["jobs"][0]["payload"]["kind"] == "reminder"
     assert data["jobs"][0]["deleteAfterRun"] is True

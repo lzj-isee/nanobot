@@ -8,13 +8,13 @@ from nanobot.cron.types import CronJob, CronPayload, CronSchedule
 
 
 @pytest.mark.asyncio
-async def test_system_event_job_sends_directly():
-    """Test that system_event jobs send message directly without agent."""
+async def test_reminder_job_sends_directly():
+    """Test that reminder jobs send message directly without agent."""
     sent_messages = []
 
     async def mock_on_job(job: CronJob) -> str | None:
         """Mock callback that handles both kinds."""
-        if job.payload.kind == "system_event":
+        if job.payload.kind == "reminder":
             # Reminder: send directly
             sent_messages.append({
                 "type": "direct",
@@ -35,12 +35,12 @@ async def test_system_event_job_sends_directly():
     )
     service._store = type('obj', (object,), {'jobs': []})()
 
-    # Add a system_event job
+    # Add a reminder job
     job = service.add_job(
         name="reminder",
         schedule=CronSchedule(kind="at", at_ms=1893456000000),
         message="Drink water!",
-        kind="system_event",
+        kind="reminder",
     )
 
     # Execute the job
@@ -53,13 +53,13 @@ async def test_system_event_job_sends_directly():
 
 
 @pytest.mark.asyncio
-async def test_agent_turn_job_goes_through_agent():
-    """Test that agent_turn jobs are processed by agent."""
+async def test_task_job_goes_through_agent():
+    """Test that task jobs are processed by agent."""
     sent_messages = []
 
     async def mock_on_job(job: CronJob) -> str | None:
         """Mock callback that handles both kinds."""
-        if job.payload.kind == "system_event":
+        if job.payload.kind == "reminder":
             sent_messages.append({
                 "type": "direct",
                 "content": job.payload.message,
@@ -80,12 +80,12 @@ async def test_agent_turn_job_goes_through_agent():
     )
     service._store = type('obj', (object,), {'jobs': []})()
 
-    # Add an agent_turn job
+    # Add a task job
     job = service.add_job(
         name="task",
         schedule=CronSchedule(kind="at", at_ms=1893456000000),
         message="Check email",
-        kind="agent_turn",
+        kind="task",
     )
 
     # Execute the job
@@ -108,19 +108,19 @@ async def test_job_kind_preserved_in_payload():
         name="reminder",
         schedule=CronSchedule(kind="every", every_ms=60000),
         message="reminder msg",
-        kind="system_event",
+        kind="reminder",
     )
 
     task_job = service.add_job(
         name="task",
         schedule=CronSchedule(kind="every", every_ms=60000),
         message="task msg",
-        kind="agent_turn",
+        kind="task",
     )
 
     # Verify kinds are preserved
-    assert reminder_job.payload.kind == "system_event"
-    assert task_job.payload.kind == "agent_turn"
+    assert reminder_job.payload.kind == "reminder"
+    assert task_job.payload.kind == "task"
 
     # Verify messages are preserved
     assert reminder_job.payload.message == "reminder msg"
@@ -128,13 +128,13 @@ async def test_job_kind_preserved_in_payload():
 
 
 @pytest.mark.asyncio
-async def test_system_event_job_with_delivery():
-    """Test system_event job with deliver flag."""
+async def test_reminder_job_with_delivery():
+    """Test reminder job with deliver flag."""
     delivered_messages = []
 
     async def mock_on_job_with_delivery(job: CronJob) -> str | None:
         """Mock callback that handles delivery."""
-        if job.payload.kind == "system_event":
+        if job.payload.kind == "reminder":
             if job.payload.to:
                 delivered_messages.append({
                     "channel": job.payload.channel,
@@ -150,12 +150,12 @@ async def test_system_event_job_with_delivery():
     )
     service._store = type('obj', (object,), {'jobs': []})()
 
-    # Add a system_event job with delivery info
+    # Add a reminder job with delivery info
     job = service.add_job(
         name="reminder",
         schedule=CronSchedule(kind="at", at_ms=1893456000000),
         message="Meeting now!",
-        kind="system_event",
+        kind="reminder",
         deliver=True,
         channel="telegram",
         to="123456789",

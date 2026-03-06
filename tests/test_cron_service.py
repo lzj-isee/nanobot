@@ -30,8 +30,8 @@ def test_add_job_accepts_valid_timezone(tmp_path) -> None:
     assert job.state.next_run_at_ms is not None
 
 
-def test_add_job_default_kind_is_agent_turn(tmp_path) -> None:
-    """Test that default kind is 'agent_turn'."""
+def test_add_job_default_kind_is_task(tmp_path) -> None:
+    """Test that default kind is 'task'."""
     service = CronService(tmp_path / "cron" / "jobs.json")
 
     job = service.add_job(
@@ -40,36 +40,36 @@ def test_add_job_default_kind_is_agent_turn(tmp_path) -> None:
         message="hello",
     )
 
-    assert job.payload.kind == "agent_turn"
+    assert job.payload.kind == "task"
 
 
-def test_add_job_with_kind_system_event(tmp_path) -> None:
-    """Test that kind='system_event' creates a reminder job."""
+def test_add_job_with_kind_reminder(tmp_path) -> None:
+    """Test that kind='reminder' creates a reminder job."""
     service = CronService(tmp_path / "cron" / "jobs.json")
 
     job = service.add_job(
         name="reminder",
         schedule=CronSchedule(kind="every", every_ms=60000),
         message="drink water",
-        kind="system_event",
+        kind="reminder",
     )
 
-    assert job.payload.kind == "system_event"
+    assert job.payload.kind == "reminder"
     assert job.payload.message == "drink water"
 
 
-def test_add_job_with_kind_agent_turn(tmp_path) -> None:
-    """Test that kind='agent_turn' creates a task job."""
+def test_add_job_with_kind_task(tmp_path) -> None:
+    """Test that kind='task' creates a task job."""
     service = CronService(tmp_path / "cron" / "jobs.json")
 
     job = service.add_job(
         name="task",
         schedule=CronSchedule(kind="every", every_ms=60000),
         message="check email",
-        kind="agent_turn",
+        kind="task",
     )
 
-    assert job.payload.kind == "agent_turn"
+    assert job.payload.kind == "task"
     assert job.payload.message == "check email"
 
 
@@ -83,15 +83,15 @@ def test_job_persistence_with_kind(tmp_path) -> None:
         name="persistent reminder",
         schedule=CronSchedule(kind="at", at_ms=1893456000000),
         message="meeting",
-        kind="system_event",
+        kind="reminder",
         delete_after_run=True,
     )
-    assert job1.payload.kind == "system_event"
+    assert job1.payload.kind == "reminder"
 
     # Create new service instance and load jobs
     service2 = CronService(store_path)
     jobs = service2.list_jobs(include_disabled=True)
 
     assert len(jobs) == 1
-    assert jobs[0].payload.kind == "system_event"
+    assert jobs[0].payload.kind == "reminder"
     assert jobs[0].payload.message == "meeting"
