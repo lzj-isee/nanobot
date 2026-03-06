@@ -7,36 +7,54 @@ description: Schedule reminders and recurring tasks.
 
 Use the `cron` tool to schedule reminders or recurring tasks.
 
-## Three Modes
+## Job Types
 
-1. **Reminder** - message is sent directly to user
-2. **Task** - message is a task description, agent executes and sends result
-3. **One-time** - runs once at a specific time, then auto-deletes
+### 1. Reminder (`kind="reminder"`)
+Message is sent directly to user without agent processing.
+
+```example
+cron(action="add", kind="reminder", message="Time to take a break!", every_seconds=1200)
+```
+
+### 2. Task (`kind="task"`)
+Message is a task description, agent executes and sends result.
+
+```example
+cron(action="add", kind="task", message="Check HKUDS/nanobot GitHub stars and report", every_seconds=600)
+```
+
+## Schedule Types
+
+| Schedule | Description | Example |
+|----------|-------------|---------|
+| `at` | One-time at specific time | `at="2026-03-07T10:00:00"` |
+| `every` | Recurring interval | `every_seconds=3600` |
+| `cron` | Cron expression | `cron_expr="0 9 * * *"` |
 
 ## Examples
 
-Fixed reminder:
-```
-cron(action="add", message="Time to take a break!", every_seconds=1200)
-```
-
-Dynamic task (agent executes each time):
-```
-cron(action="add", message="Check HKUDS/nanobot GitHub stars and report", every_seconds=600)
+One-time reminder:
+```example
+cron(action="add", kind="reminder", message="Meeting starts now!", at="2026-03-07T10:00:00")
 ```
 
-One-time scheduled task (compute ISO datetime from current time):
-```
-cron(action="add", message="Remind me about the meeting", at="<ISO datetime>")
+Recurring reminder:
+```example
+cron(action="add", kind="reminder", message="Drink water!", every_seconds=1800)
 ```
 
-Timezone-aware cron:
+Daily task with timezone:
+```example
+cron(action="add", kind="task", message="Morning standup summary", cron_expr="0 9 * * 1-5", tz="America/Vancouver")
 ```
-cron(action="add", message="Morning standup", cron_expr="0 9 * * 1-5", tz="America/Vancouver")
+
+One-time task (agent executes once at specific time):
+```example
+cron(action="add", kind="task", message="Generate daily report and send to team", at="2026-03-07T18:00:00")
 ```
 
 List/remove:
-```
+```example
 cron(action="list")
 cron(action="remove", job_id="abc123")
 ```
@@ -45,12 +63,12 @@ cron(action="remove", job_id="abc123")
 
 | User says | Parameters |
 |-----------|------------|
-| every 20 minutes | every_seconds: 1200 |
-| every hour | every_seconds: 3600 |
-| every day at 8am | cron_expr: "0 8 * * *" |
-| weekdays at 5pm | cron_expr: "0 17 * * 1-5" |
-| 9am Vancouver time daily | cron_expr: "0 9 * * *", tz: "America/Vancouver" |
-| at a specific time | at: ISO datetime string (compute from current time) |
+| every 20 minutes | `every_seconds: 1200` |
+| every hour | `every_seconds: 3600` |
+| every day at 8am | `cron_expr: "0 8 * * *"` |
+| weekdays at 5pm | `cron_expr: "0 17 * * 1-5"` |
+| 9am Vancouver time daily | `cron_expr: "0 9 * * *", tz: "America/Vancouver"` |
+| at a specific time | `at: ISO datetime string` |
 
 ## Timezone
 

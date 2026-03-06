@@ -6,7 +6,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, Literal
 
 from loguru import logger
 
@@ -124,7 +124,10 @@ class CronService:
         """Save jobs to disk."""
         if not self._store:
             return
-        
+
+        if self.store_path is None:
+            return
+
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
         
         data = {
@@ -283,19 +286,20 @@ class CronService:
         channel: str | None = None,
         to: str | None = None,
         delete_after_run: bool = False,
+        kind: Literal["agent_turn", "system_event"] = "agent_turn",
     ) -> CronJob:
         """Add a new job."""
         store = self._load_store()
         _validate_schedule_for_add(schedule)
         now = _now_ms()
-        
+
         job = CronJob(
             id=str(uuid.uuid4())[:8],
             name=name,
             enabled=True,
             schedule=schedule,
             payload=CronPayload(
-                kind="agent_turn",
+                kind=kind,
                 message=message,
                 deliver=deliver,
                 channel=channel,

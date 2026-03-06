@@ -39,7 +39,6 @@ python {baseDir}/scripts/search_stock.py --query "贵州茅台"
 The script returns:
 - **Stock name and code**
 - **Current price**
-- **Price change / Change percentage**
 
 If no useful information is found, inform the user directly. Do not fabricate data.
 

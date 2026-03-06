@@ -61,6 +61,11 @@ class CronTool(Tool):
                 "job_id": {
                     "type": "string",
                     "description": "Job ID (for remove)"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["reminder", "task"],
+                    "description": "Job type: 'reminder' sends directly, 'task' runs through agent (default: task)"
                 }
             },
             "required": ["action"]
@@ -75,10 +80,11 @@ class CronTool(Tool):
         tz: str | None = None,
         at: str | None = None,
         job_id: str | None = None,
+        kind: str = "task",
         **kwargs: Any
     ) -> str:
         if action == "add":
-            return self._add_job(message, every_seconds, cron_expr, tz, at)
+            return self._add_job(message, every_seconds, cron_expr, tz, at, kind)
         elif action == "list":
             return self._list_jobs()
         elif action == "remove":
@@ -92,6 +98,7 @@ class CronTool(Tool):
         cron_expr: str | None,
         tz: str | None,
         at: str | None,
+        kind: str = "task",
     ) -> str:
         if not message:
             return "Error: message is required for add"
@@ -105,7 +112,14 @@ class CronTool(Tool):
                 ZoneInfo(tz)
             except (KeyError, Exception):
                 return f"Error: unknown timezone '{tz}'"
-        
+
+        # Validate kind
+        if kind not in ("reminder", "task"):
+            return "Error: kind must be 'reminder' or 'task'"
+
+        # Map kind to service kind
+        service_kind = "system_event" if kind == "reminder" else "agent_turn"
+
         # Build schedule
         delete_after = False
         if every_seconds:
@@ -120,7 +134,7 @@ class CronTool(Tool):
             delete_after = True
         else:
             return "Error: either every_seconds, cron_expr, or at is required"
-        
+
         job = self._cron.add_job(
             name=message[:30],
             schedule=schedule,
@@ -129,14 +143,15 @@ class CronTool(Tool):
             channel=self._channel,
             to=self._chat_id,
             delete_after_run=delete_after,
+            kind=service_kind,
         )
-        return f"Created job '{job.name}' (id: {job.id})"
+        return f"Created {kind} job '{job.name}' (id: {job.id})"
     
     def _list_jobs(self) -> str:
         jobs = self._cron.list_jobs()
         if not jobs:
             return "No scheduled jobs."
-        lines = [f"- {j.name} (id: {j.id}, {j.schedule.kind})" for j in jobs]
+        lines = [f"- {j.name} (id: {j.id}, kind: {j.payload.kind}, {j.schedule.kind})" for j in jobs]
         return "Scheduled jobs:\n" + "\n".join(lines)
     
     def _remove_job(self, job_id: str | None) -> str:

@@ -323,21 +323,33 @@ def gateway(
     
     # Set cron callback (needs agent)
     async def on_cron_job(job: CronJob) -> str | None:
-        """Execute a cron job through the agent."""
-        response = await agent.process_direct(
-            job.payload.message,
-            session_key=f"cron:{job.id}",
-            channel=job.payload.channel or "cli",
-            chat_id=job.payload.to or "direct",
-        )
-        if job.payload.deliver and job.payload.to:
-            from nanobot.bus.events import OutboundMessage
-            await bus.publish_outbound(OutboundMessage(
+        """Execute a cron job."""
+        if job.payload.kind == "system_event":
+            # Reminder: send message directly without agent processing
+            if job.payload.to:
+                from nanobot.bus.events import OutboundMessage
+                await bus.publish_outbound(OutboundMessage(
+                    channel=job.payload.channel or "cli",
+                    chat_id=job.payload.to,
+                    content=job.payload.message
+                ))
+            return job.payload.message
+        else:
+            # Task: process through agent
+            response = await agent.process_direct(
+                job.payload.message,
+                session_key=f"cron:{job.id}",
                 channel=job.payload.channel or "cli",
-                chat_id=job.payload.to,
-                content=response or ""
-            ))
-        return response
+                chat_id=job.payload.to or "direct",
+            )
+            if job.payload.deliver and job.payload.to:
+                from nanobot.bus.events import OutboundMessage
+                await bus.publish_outbound(OutboundMessage(
+                    channel=job.payload.channel or "cli",
+                    chat_id=job.payload.to,
+                    content=response or ""
+                ))
+            return response
     cron.on_job = on_cron_job
     
     # Create channel manager
@@ -852,6 +864,7 @@ def cron_add(
     cron_expr: str = typer.Option(None, "--cron", "-c", help="Cron expression (e.g. '0 9 * * *')"),
     tz: str | None = typer.Option(None, "--tz", help="IANA timezone for cron (e.g. 'America/Vancouver')"),
     at: str = typer.Option(None, "--at", help="Run once at time (ISO format)"),
+    kind: str = typer.Option("task", "--kind", "-k", help="Job kind: 'reminder' or 'task' (default: task)"),
     deliver: bool = typer.Option(False, "--deliver", "-d", help="Deliver response to channel"),
     to: str = typer.Option(None, "--to", help="Recipient for delivery"),
     channel: str = typer.Option(None, "--channel", help="Channel for delivery (e.g. 'telegram', 'whatsapp')"),
@@ -860,7 +873,12 @@ def cron_add(
     from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronSchedule
-    
+
+    # Validate kind
+    if kind not in ("reminder", "task"):
+        console.print("[red]Error: --kind must be 'reminder' or 'task'[/red]")
+        raise typer.Exit(1)
+
     if tz and not cron_expr:
         console.print("[red]Error: --tz can only be used with --cron[/red]")
         raise typer.Exit(1)
@@ -877,10 +895,16 @@ def cron_add(
     else:
         console.print("[red]Error: Must specify --every, --cron, or --at[/red]")
         raise typer.Exit(1)
-    
+
     store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
-    
+
+    # Map CLI kind to internal kind
+    internal_kind = "system_event" if kind == "reminder" else "agent_turn"
+
+    # One-time jobs (at) should be deleted after run
+    delete_after_run = at is not None
+
     try:
         job = service.add_job(
             name=name,
@@ -889,12 +913,14 @@ def cron_add(
             deliver=deliver,
             to=to,
             channel=channel,
+            kind=internal_kind,
+            delete_after_run=delete_after_run,
         )
     except ValueError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1) from e
 
-    console.print(f"[green]✓[/green] Added job '{job.name}' ({job.id})")
+    console.print(f"[green]✓[/green] Added {kind} job '{job.name}' ({job.id})")
 
 
 @cron_app.command("remove")
