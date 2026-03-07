@@ -1,10 +1,11 @@
 """
-Bilibili 关注动态提取脚本 - 修复 412 错误版本
-提取 https://t.bilibili.com/ 页面中关注UP主的更新信息
+Bilibili 关注动态流提取脚本 - 修复 412 错误版本
+提取 https://t.bilibili.com/ 页面中关注UP主的更新信息（聚合时间线）
 
 使用方法:
-    python bilibili_followings.py                          # 使用默认的 .bilibili.cookie 文件
-    python bilibili_followings.py --cookie-file /path/to/cookie.txt  # 指定 cookie 文件路径
+    python bilibili_feed_following.py                          # 使用默认的 .bilibili.cookie 文件
+    python bilibili_feed_following.py --cookie-file /path/to/cookie.txt  # 指定 cookie 文件路径
+    python bilibili_feed_following.py --output result.txt      # 保存结果到文件
 
 修复内容:
     - 使用 API 接口替代页面爬取（默认），避免 412 错误
@@ -349,9 +350,13 @@ async def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python bilibili_followings.py                                    # 使用默认的 .bilibili.cookie 文件
-  python bilibili_followings.py --cookie-file ~/cookies/bili.txt   # 指定 cookie 文件路径
-  python bilibili_followings.py --use-page                         # 使用页面爬取模式（默认使用 API 模式）
+  python bilibili_feed_following.py                                    # 使用默认的 .bilibili.cookie 文件
+  python bilibili_feed_following.py --cookie-file ~/cookies/bili.txt   # 指定 cookie 文件路径
+  python bilibili_feed_following.py --output result.txt                # 保存结果到文件
+  python bilibili_feed_following.py --use-page                         # 使用页面爬取模式（默认使用 API 模式）
+
+提示:
+  当输出内容超过3000字符时，终端会自动截断显示，并提示使用 --output 参数保存完整结果到文件
 
 Cookie 文件格式:
   从浏览器开发者工具复制的 cookie 字符串即可，如:
@@ -369,7 +374,16 @@ Cookie 文件格式:
         action="store_true",
         help="使用页面爬取模式（默认使用 API 模式）"
     )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        help="输出文件路径（如果不指定则输出到控制台）"
+    )
     args = parser.parse_args()
+
+    # 常量：终端输出最大字符数
+    MAX_TERMINAL_OUTPUT = 3000
 
     # 解析 cookie 文件
     try:
@@ -499,9 +513,32 @@ Cookie 文件格式:
             # 打印结果
             if dynamics:
                 formatted = format_dynamics(dynamics, max_items=20, max_chars=3000)
-                print("\n" + "="*50)
-                print(formatted)
-                print("="*50)
+
+                if args.output:
+                    # 写入文件
+                    output_path = Path(args.output)
+                    output_path.write_text(formatted, encoding='utf-8')
+                    print(f"\n结果已保存到: {args.output}")
+                    print(f"共 {len(dynamics)} 条动态")
+                else:
+                    # 检查输出长度限制
+                    if len(formatted) > MAX_TERMINAL_OUTPUT:
+                        # 截断输出并提示
+                        truncated = formatted[:MAX_TERMINAL_OUTPUT]
+                        # 尝试在最后一个完整行截断
+                        last_newline = truncated.rfind('\n')
+                        if last_newline > MAX_TERMINAL_OUTPUT * 0.8:
+                            truncated = truncated[:last_newline]
+                        print("\n" + "="*50)
+                        print(truncated)
+                        print("\n" + "="*50)
+                        print(f"\n⚠️  输出内容过长（{len(formatted)} 字符），已截断显示")
+                        print(f"💡 提示：使用 --output <文件路径> 参数可将完整结果保存到文件")
+                        print(f"   例如: python {Path(__file__).name} --output result.txt")
+                    else:
+                        print("\n" + "="*50)
+                        print(formatted)
+                        print("="*50)
             else:
                 print("未找到任何动态内容")
 
