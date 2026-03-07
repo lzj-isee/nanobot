@@ -110,7 +110,7 @@ async def extract_dynamics(page) -> List[DynamicItem]:
     dynamics = []
 
     # 等待动态列表加载
-    await page.wait_for_selector(".bili-dyn-list__item", timeout=10000)
+    await page.wait_for_selector(".bili-dyn-list__item", timeout=30000)
 
     # 获取所有动态项
     items = await page.query_selector_all(".bili-dyn-list__item")
@@ -263,11 +263,11 @@ Cookie 文件格式:
         page = await context.new_page()
 
         print("正在访问 https://t.bilibili.com/ ...")
-        response = await page.goto("https://t.bilibili.com/", wait_until="domcontentloaded", timeout=60000)
+        response = await page.goto("https://t.bilibili.com/", wait_until="domcontentloaded")
         print(f"页面加载状态: {response.status if response else 'No response'}")
 
         # 等待动态内容加载
-        await page.wait_for_timeout(10_000)
+        await page.wait_for_selector(".bili-dyn-list__item", timeout=30000)
 
         # 获取页面标题
         title = await page.title()
@@ -283,7 +283,7 @@ Cookie 文件格式:
         needs_login = False
         for selector in login_selectors:
             try:
-                element = await page.wait_for_selector(selector, timeout=2000)
+                element = await page.wait_for_selector(selector, timeout=30000)
                 if element:
                     needs_login = True
                     break
