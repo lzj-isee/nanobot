@@ -263,11 +263,11 @@ Cookie 文件格式:
         page = await context.new_page()
 
         print("正在访问 https://t.bilibili.com/ ...")
-        response = await page.goto("https://t.bilibili.com/", wait_until="networkidle")
+        response = await page.goto("https://t.bilibili.com/", wait_until="domcontentloaded", timeout=60000)
         print(f"页面加载状态: {response.status if response else 'No response'}")
 
         # 等待动态内容加载
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(10_000)
 
         # 获取页面标题
         title = await page.title()
