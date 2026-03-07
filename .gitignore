@@ -21,3 +21,4 @@ poetry.lock
 botpy.log
 .vscode/
 temp*.py
+.bilibili.cookie
