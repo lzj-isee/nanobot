@@ -243,15 +243,28 @@ Cookie 文件格式:
         sys.exit(1)
 
     async with async_playwright() as p:
-        # 启动浏览器（无头模式）
-        browser = await p.chromium.launch(headless=True)
+        # 启动浏览器（无头模式，添加反爬参数）
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-web-security",
+                "--disable-features=IsolateOrigins,site-per-process",
+            ]
+        )
 
         context = await browser.new_context(
             viewport={"width": 1280, "height": 800},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            locale="zh-CN",
+            timezone_id="Asia/Shanghai",
             extra_http_headers={
                 "Referer": "https://t.bilibili.com/",
                 "Origin": "https://t.bilibili.com",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Cache-Control": "max-age=0",
             }
         )
 
@@ -261,6 +274,20 @@ Cookie 文件格式:
         print(f"已加载 {len(cookies)} 个 Cookie")
 
         page = await context.new_page()
+
+        # 注入脚本隐藏自动化特征
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['zh-CN', 'zh', 'en']
+            });
+            window.chrome = { runtime: {} };
+        """)
 
         print("正在访问 https://t.bilibili.com/ ...")
         response = await page.goto("https://t.bilibili.com/", wait_until="domcontentloaded")
