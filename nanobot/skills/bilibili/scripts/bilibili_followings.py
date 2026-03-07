@@ -1,21 +1,31 @@
 """
-Bilibili 关注动态提取脚本
+Bilibili 关注动态提取脚本 - 修复 412 错误版本
 提取 https://t.bilibili.com/ 页面中关注UP主的更新信息
 
 使用方法:
-    python temp.py                          # 使用默认的 .bilibili.cookie 文件
-    python temp.py --cookie-file /path/to/cookie.txt  # 指定 cookie 文件路径
+    python bilibili_followings.py                          # 使用默认的 .bilibili.cookie 文件
+    python bilibili_followings.py --cookie-file /path/to/cookie.txt  # 指定 cookie 文件路径
+
+修复内容:
+    - 使用 API 接口替代页面爬取（默认），避免 412 错误
+    - 增强反检测措施
+    - 添加随机延迟模拟人类操作
+    - 改进会话管理
 """
 
 import argparse
 import asyncio
+import json
 import os
+import random
 import re
 import sys
 from pathlib import Path
-from playwright.async_api import async_playwright
 from dataclasses import dataclass
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
+from urllib.parse import urlencode
+
+from playwright.async_api import async_playwright
 
 
 # 必需的 Cookie 名称
@@ -105,8 +115,129 @@ def build_cookie_list(cookie_dict: Dict[str, str]) -> List[Dict]:
     ]
 
 
-async def extract_dynamics(page) -> List[DynamicItem]:
-    """从页面提取动态信息"""
+async def random_delay(min_ms: int = 500, max_ms: int = 2000):
+    """随机延迟，模拟人类操作"""
+    delay = random.randint(min_ms, max_ms) / 1000
+    await asyncio.sleep(delay)
+
+
+async def fetch_dynamics_via_api(page, cookie_dict: Dict[str, str]) -> List[DynamicItem]:
+    """
+    使用 Bilibili API 获取关注动态，避免 412 错误
+    """
+    dynamics = []
+
+    # 构建 API 请求参数
+    params = {
+        "timezone_offset": "-480",
+        "type": "all",
+        "page": "1",
+        "web_location": "333.1367",
+    }
+
+    # 构建请求头
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Origin": "https://t.bilibili.com",
+        "Referer": "https://t.bilibili.com/",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+    }
+
+    # 先访问主页建立会话
+    print("正在建立会话...")
+    await page.goto("https://bilibili.com", wait_until="networkidle")
+    await random_delay(1000, 2000)
+
+    # 访问动态页面
+    print("正在访问动态页面...")
+    await page.goto("https://t.bilibili.com", wait_until="networkidle")
+    await random_delay(1500, 3000)
+
+    # 执行 API 请求
+    api_url = f"https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?{urlencode(params)}"
+
+    print(f"正在获取动态数据...")
+
+    # 使用页面执行 fetch 请求（携带当前页面的 cookie）
+    response_data = await page.evaluate(f"""
+        async () => {{
+            try {{
+                const response = await fetch("{api_url}", {{
+                    method: 'GET',
+                    headers: {json.dumps(headers)},
+                    credentials: 'include'
+                }});
+                return await response.json();
+            }} catch (e) {{
+                return {{ error: e.message }};
+            }}
+        }}
+    """)
+
+    if not response_data or response_data.get("code") != 0:
+        error_msg = response_data.get("message", "未知错误") if response_data else "无响应"
+        print(f"API 请求失败: {error_msg}")
+        return []
+
+    items = response_data.get("data", {}).get("items", [])
+    print(f"获取到 {len(items)} 条动态")
+
+    for item in items:
+        try:
+            # 解析动态数据
+            modules = item.get("modules", {})
+            module_author = modules.get("module_author", {})
+            module_dynamic = modules.get("module_dynamic", {})
+
+            # UP主信息
+            up_name = module_author.get("name", "未知UP主")
+            time_text = module_author.get("pub_time", "")
+
+            # 动态内容
+            content = ""
+            desc = module_dynamic.get("desc", {})
+            if desc:
+                content = desc.get("text", "")
+
+            # 视频信息
+            video_title = None
+            video_desc = None
+            major = module_dynamic.get("major", {})
+            if major and major.get("type") == "MAJOR_TYPE_ARCHIVE":
+                archive = major.get("archive", {})
+                video_title = archive.get("title", "")
+                video_desc = archive.get("desc", "")
+
+            # 如果没有内容但有视频标题，使用视频标题
+            if not content and video_title:
+                content = video_title
+
+            dynamic = DynamicItem(
+                up_name=up_name,
+                time_text=time_text,
+                content=content,
+                video_title=video_title,
+                video_desc=video_desc
+            )
+            dynamics.append(dynamic)
+
+        except Exception as e:
+            print(f"解析动态时出错: {e}")
+            continue
+
+    return dynamics
+
+
+async def extract_dynamics_from_page(page) -> List[DynamicItem]:
+    """从页面提取动态信息（备用方案）"""
     dynamics = []
 
     # 等待动态列表加载
@@ -214,12 +345,13 @@ async def main():
 
     # 解析命令行参数
     parser = argparse.ArgumentParser(
-        description="提取 Bilibili 关注动态",
+        description="提取 Bilibili 关注动态（修复 412 版本）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python temp.py                                    # 使用默认的 .bilibili.cookie 文件
-  python temp.py --cookie-file ~/cookies/bili.txt   # 指定 cookie 文件路径
+  python bilibili_followings.py                                    # 使用默认的 .bilibili.cookie 文件
+  python bilibili_followings.py --cookie-file ~/cookies/bili.txt   # 指定 cookie 文件路径
+  python bilibili_followings.py --use-page                         # 使用页面爬取模式（默认使用 API 模式）
 
 Cookie 文件格式:
   从浏览器开发者工具复制的 cookie 字符串即可，如:
@@ -232,6 +364,11 @@ Cookie 文件格式:
         default=str(default_cookie_file),
         help=f"Cookie 文件路径 (默认: {default_cookie_file})"
     )
+    parser.add_argument(
+        "--use-page",
+        action="store_true",
+        help="使用页面爬取模式（默认使用 API 模式）"
+    )
     args = parser.parse_args()
 
     # 解析 cookie 文件
@@ -243,27 +380,45 @@ Cookie 文件格式:
         sys.exit(1)
 
     async with async_playwright() as p:
-        # 启动浏览器（无头模式，添加反爬参数）
+        # 启动浏览器 - 使用更多反检测参数
         browser = await p.chromium.launch(
             headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-web-security",
                 "--disable-features=IsolateOrigins,site-per-process",
+                "--disable-site-isolation-trials",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-infobars",
+                "--window-size=1280,800",
+                "--start-maximized",
+                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             ]
         )
 
+        # 创建上下文 - 模拟真实浏览器环境
         context = await browser.new_context(
             viewport={"width": 1280, "height": 800},
+            screen={"width": 1280, "height": 800},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             locale="zh-CN",
             timezone_id="Asia/Shanghai",
+            geolocation={"latitude": 31.2304, "longitude": 121.4737},
+            permissions=["geolocation"],
+            color_scheme="light",
             extra_http_headers={
-                "Referer": "https://t.bilibili.com/",
-                "Origin": "https://t.bilibili.com",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
                 "Accept-Encoding": "gzip, deflate, br",
+                "DNT": "1",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Sec-Fetch-User": "?1",
                 "Cache-Control": "max-age=0",
             }
         )
@@ -275,65 +430,89 @@ Cookie 文件格式:
 
         page = await context.new_page()
 
-        # 注入脚本隐藏自动化特征
+        # 注入更完善的反检测脚本
         await page.add_init_script("""
+            // 隐藏 webdriver
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
             });
+
+            // 模拟插件
             Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
+                get: () => [
+                    {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer'},
+                    {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
+                    {name: 'Native Client', filename: 'internal-nacl-plugin'}
+                ]
             });
+
+            // 模拟语言
             Object.defineProperty(navigator, 'languages', {
                 get: () => ['zh-CN', 'zh', 'en']
             });
-            window.chrome = { runtime: {} };
+
+            // 隐藏 automation 标记
+            delete navigator.__proto__.webdriver;
+
+            // 模拟 chrome 对象
+            window.chrome = {
+                runtime: {
+                    OnInstalledReason: {CHROME_UPDATE: "chrome_update", INSTALL: "install", SHARED_MODULE_UPDATE: "shared_module_update", UPDATE: "update"},
+                    OnRestartRequiredReason: {APP_UPDATE: "app_update", OS_UPDATE: "os_update", PERIODIC: "periodic"},
+                    PlatformArch: {ARM: "arm", ARM64: "arm64", MIPS: "mips", MIPS64: "mips64", X86_32: "x86-32", X86_64: "x86-64"},
+                    PlatformNaclArch: {ARM: "arm", MIPS: "mips", MIPS64: "mips64", MIPS64EL: "mips64el", MIPSEL: "mipsel", X86_32: "x86-32", X86_64: "x86-64"},
+                    PlatformOs: {ANDROID: "android", CROS: "cros", LINUX: "linux", MAC: "mac", OPENBSD: "openbsd", WIN: "win"},
+                    RequestUpdateCheckStatus: {NO_UPDATE: "no_update", THROTTLED: "throttled", UPDATE_AVAILABLE: "update_available"}
+                },
+                loadTimes: () => {},
+                csi: () => {},
+                app: {}
+            };
+
+            // 覆盖 permissions API
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({state: Notification.permission}) :
+                    originalQuery(parameters)
+            );
         """)
 
-        print("正在访问 https://t.bilibili.com/ ...")
-        response = await page.goto("https://t.bilibili.com/", wait_until="domcontentloaded")
-        print(f"页面加载状态: {response.status if response else 'No response'}")
+        try:
+            if args.use_page:
+                # 使用页面爬取模式
+                print("使用页面爬取模式...")
+                print("正在访问 https://t.bilibili.com/ ...")
+                response = await page.goto("https://t.bilibili.com/", wait_until="domcontentloaded")
+                print(f"页面加载状态: {response.status if response else 'No response'}")
 
-        # 等待动态内容加载
-        await page.wait_for_selector(".bili-dyn-list__item", timeout=30000)
+                await page.wait_for_selector(".bili-dyn-list__item", timeout=30000)
+                title = await page.title()
+                print(f"页面标题: {title}\n")
 
-        # 获取页面标题
-        title = await page.title()
-        print(f"页面标题: {title}\n")
+                dynamics = await extract_dynamics_from_page(page)
+            else:
+                # 使用 API 模式（默认）
+                print("使用 API 模式获取动态...")
+                dynamics = await fetch_dynamics_via_api(page, cookie_dict)
 
-        # 检查是否需要登录
-        login_selectors = [
-            ".login-box",
-            ".login-panel",
-            ".bili-login",
-        ]
+            # 打印结果
+            if dynamics:
+                formatted = format_dynamics(dynamics, max_items=20, max_chars=3000)
+                print("\n" + "="*50)
+                print(formatted)
+                print("="*50)
+            else:
+                print("未找到任何动态内容")
 
-        needs_login = False
-        for selector in login_selectors:
-            try:
-                element = await page.wait_for_selector(selector, timeout=30000)
-                if element:
-                    needs_login = True
-                    break
-            except:
-                continue
+        except Exception as e:
+            print(f"执行出错: {e}")
+            import traceback
+            traceback.print_exc()
 
-        if needs_login:
-            print("⚠️  登录已过期，请更新 Cookie 文件中的值")
+        finally:
             await browser.close()
-            return
-
-        # 提取动态信息
-        dynamics = await extract_dynamics(page)
-
-        # 打印结果
-        if dynamics:
-            formatted = format_dynamics(dynamics, max_items=20, max_chars=3000)
-            print(formatted)
-        else:
-            print("未找到任何动态内容")
-
-        await browser.close()
-        print("\n浏览器已关闭")
+            print("\n浏览器已关闭")
 
 
 if __name__ == "__main__":
