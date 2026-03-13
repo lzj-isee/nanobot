@@ -22,3 +22,4 @@ botpy.log
 .vscode/
 temp*.py
 .bilibili.cookie
+.qwen

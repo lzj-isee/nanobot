@@ -56,18 +56,53 @@ async def test_add_task_job(cron_tool, cron_service):
 
 
 @pytest.mark.asyncio
-async def test_add_job_default_kind_is_task(cron_tool, cron_service):
-    """Test that default kind is 'task' when not specified."""
+async def test_add_job_requires_kind(cron_tool):
+    """Test that kind is required when adding a job."""
     result = await cron_tool.execute(
         action="add",
-        message="Default task",
+        message="Missing kind",
         every_seconds=60,
+    )
+
+    assert "Error: kind is required" in result
+
+
+@pytest.mark.asyncio
+async def test_add_job_with_custom_name(cron_tool, cron_service):
+    """Test adding a job with custom name."""
+    result = await cron_tool.execute(
+        action="add",
+        kind="reminder",
+        name="Water Break",
+        message="Time to drink water and stretch your legs!",
+        every_seconds=1800,
+    )
+
+    assert "Created reminder job" in result
+
+    jobs = cron_service.list_jobs(include_disabled=True)
+    assert len(jobs) == 1
+    assert jobs[0].name == "Water Break"
+    assert jobs[0].payload.message == "Time to drink water and stretch your legs!"
+
+
+@pytest.mark.asyncio
+async def test_add_job_without_name_uses_message(cron_tool, cron_service):
+    """Test that message is used as name fallback when name not provided."""
+    result = await cron_tool.execute(
+        action="add",
+        kind="task",
+        message="Check email and respond to urgent ones",
+        every_seconds=3600,
     )
 
     assert "Created task job" in result
 
     jobs = cron_service.list_jobs(include_disabled=True)
-    assert jobs[0].payload.kind == "task"
+    assert len(jobs) == 1
+    # Name should be truncated message (first 30 chars)
+    assert jobs[0].name == "Check email and respond to urg"
+    assert jobs[0].payload.message == "Check email and respond to urgent ones"
 
 
 @pytest.mark.asyncio
@@ -125,14 +160,85 @@ async def test_list_jobs(cron_tool):
     await cron_tool.execute(
         action="add",
         kind="reminder",
-        message="Test",
+        name="Test Job",
+        message="Test reminder message",
         every_seconds=60,
     )
 
     result = await cron_tool.execute(action="list")
 
-    assert "Test" in result
+    assert "Test Job" in result
     assert "reminder" in result
+    assert "every 60s" in result
+    assert "Test reminder message" in result
+    assert "enabled" in result
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_with_cron_expr(cron_tool):
+    """Test listing jobs with cron expression and timezone."""
+    await cron_tool.execute(
+        action="add",
+        kind="task",
+        name="Daily Task",
+        message="Generate daily report",
+        cron_expr="0 9 * * *",
+        tz="America/Vancouver",
+    )
+
+    result = await cron_tool.execute(action="list")
+
+    assert "Daily Task" in result
+    assert "task" in result
+    assert "0 9 * * *" in result
+    assert "America/Vancouver" in result
+    assert "Generate daily report" in result
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_with_one_time(cron_tool):
+    """Test listing one-time jobs."""
+    await cron_tool.execute(
+        action="add",
+        kind="reminder",
+        name="Meeting",
+        message="Team standup now!",
+        at="2026-12-31T23:59:59",
+    )
+
+    result = await cron_tool.execute(action="list")
+
+    assert "Meeting" in result
+    assert "one-time" in result
+    assert "Team standup now!" in result
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_multiple(cron_tool):
+    """Test listing multiple jobs."""
+    await cron_tool.execute(
+        action="add",
+        kind="reminder",
+        name="Job A",
+        message="Message A",
+        every_seconds=60,
+    )
+    await cron_tool.execute(
+        action="add",
+        kind="task",
+        name="Job B",
+        message="Message B",
+        every_seconds=120,
+    )
+
+    result = await cron_tool.execute(action="list")
+
+    assert "Job A" in result
+    assert "Job B" in result
+    assert "Message A" in result
+    assert "Message B" in result
+    assert "every 60s" in result
+    assert "every 120s" in result
 
 
 @pytest.mark.asyncio

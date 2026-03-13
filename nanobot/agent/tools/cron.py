@@ -38,9 +38,13 @@ class CronTool(Tool):
                     "enum": ["add", "list", "remove"],
                     "description": "Action to perform"
                 },
+                "name": {
+                    "type": "string",
+                    "description": "Job name for display (short identifier)"
+                },
                 "message": {
                     "type": "string",
-                    "description": "Reminder message (for add)"
+                    "description": "For reminder: message sent to user. For task: task description for agent to execute"
                 },
                 "every_seconds": {
                     "type": "integer",
@@ -65,7 +69,7 @@ class CronTool(Tool):
                 "kind": {
                     "type": "string",
                     "enum": ["reminder", "task"],
-                    "description": "Job type: 'reminder' sends directly, 'task' runs through agent (default: task)"
+                    "description": "Job type: 'reminder' sends directly, 'task' runs through agent"
                 }
             },
             "required": ["action"]
@@ -74,17 +78,18 @@ class CronTool(Tool):
     async def execute(
         self,
         action: str,
+        name: str = "",
         message: str = "",
         every_seconds: int | None = None,
         cron_expr: str | None = None,
         tz: str | None = None,
         at: str | None = None,
         job_id: str | None = None,
-        kind: str = "task",
+        kind: str | None = None,
         **kwargs: Any
     ) -> str:
         if action == "add":
-            return self._add_job(message, every_seconds, cron_expr, tz, at, kind)
+            return self._add_job(name, message, every_seconds, cron_expr, tz, at, kind)
         elif action == "list":
             return self._list_jobs()
         elif action == "remove":
@@ -93,15 +98,20 @@ class CronTool(Tool):
     
     def _add_job(
         self,
+        name: str,
         message: str,
         every_seconds: int | None,
         cron_expr: str | None,
         tz: str | None,
         at: str | None,
-        kind: str = "task",
+        kind: str | None,
     ) -> str:
+        if not kind:
+            return "Error: kind is required for add"
         if not message:
             return "Error: message is required for add"
+        # Use provided name or fallback to truncated message
+        job_name = name if name else message[:30]
         if not self._channel or not self._chat_id:
             return "Error: no session context (channel/chat_id)"
         if tz and not cron_expr:
@@ -133,7 +143,7 @@ class CronTool(Tool):
             return "Error: either every_seconds, cron_expr, or at is required"
 
         job = self._cron.add_job(
-            name=message[:30],
+            name=job_name,
             schedule=schedule,
             message=message,
             deliver=True,
@@ -148,8 +158,31 @@ class CronTool(Tool):
         jobs = self._cron.list_jobs()
         if not jobs:
             return "No scheduled jobs."
-        lines = [f"- {j.name} (id: {j.id}, kind: {j.payload.kind}, {j.schedule.kind})" for j in jobs]
-        return "Scheduled jobs:\n" + "\n".join(lines)
+
+        lines = ["Scheduled jobs:"]
+        for j in jobs:
+            # Format schedule
+            if j.schedule.kind == "every":
+                sched = f"every {(j.schedule.every_ms or 0) // 1000}s"
+            elif j.schedule.kind == "cron":
+                sched = f"{j.schedule.expr or ''} ({j.schedule.tz})" if j.schedule.tz else (j.schedule.expr or "")
+            else:
+                sched = "one-time"
+
+            # Format next run
+            next_run = "N/A"
+            if j.state.next_run_at_ms:
+                from datetime import datetime
+                ts = j.state.next_run_at_ms / 1000
+                next_run = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+            status = "enabled" if j.enabled else "disabled"
+
+            lines.append(f"\n- {j.name} (id: {j.id})")
+            lines.append(f"  kind: {j.payload.kind}, schedule: {sched}, status: {status}, next: {next_run}")
+            lines.append(f"  message: {j.payload.message}")
+
+        return "\n".join(lines)
     
     def _remove_job(self, job_id: str | None) -> str:
         if not job_id:
