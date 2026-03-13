@@ -217,9 +217,9 @@ class AgentDefaults(Base):
     """Default agent configuration."""
 
     workspace: str = "~/.nanobot/workspace"
-    model: str = "moonshot/kimi-k2.5"
-    provider: str = "openai"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
-    max_tokens: int = 32768
+    model: str = "kimi-k2.5"
+    provider: str = "custom"  # Provider name (e.g. "anthropic", "openrouter") or "auto" for auto-detection
+    max_tokens: int = 16384
     temperature: float = 0.1
     max_tool_iterations: int = 40
     memory_window: int = 100
