@@ -236,7 +236,7 @@ async def fetch_user_dynamics(page, uid: str, limit: int = 20) -> List[UserDynam
 
     # 先访问主页建立会话
     print("正在建立会话...")
-    await page.goto("https://bilibili.com", wait_until="networkidle")
+    await page.goto("https://bilibili.com", wait_until="domcontentloaded")
     await random_delay(1000, 2000)
 
     while count < limit:

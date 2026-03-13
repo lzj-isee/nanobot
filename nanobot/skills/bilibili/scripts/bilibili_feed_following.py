@@ -154,12 +154,12 @@ async def fetch_dynamics_via_api(page, cookie_dict: Dict[str, str]) -> List[Dyna
 
     # 先访问主页建立会话
     print("正在建立会话...")
-    await page.goto("https://bilibili.com", wait_until="networkidle")
+    await page.goto("https://bilibili.com", wait_until="domcontentloaded")
     await random_delay(1000, 2000)
 
     # 访问动态页面
     print("正在访问动态页面...")
-    await page.goto("https://t.bilibili.com", wait_until="networkidle")
+    await page.goto("https://t.bilibili.com", wait_until="domcontentloaded")
     await random_delay(1500, 3000)
 
     # 执行 API 请求
